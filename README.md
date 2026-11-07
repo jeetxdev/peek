@@ -5,13 +5,11 @@ A light terminal code editor for macOS, built for Ghostty. It has a clickable fi
 ## Install
 
 ```sh
-brew install uv gh
-gh auth login
-gh auth setup-git
+brew install uv
 uv tool install git+https://github.com/jeetxdev/peek
 ```
 
-`uv` downloads the Python version peek needs, so nothing else is required. The two `gh` steps let `uv` read this private repo. If your shell can't find `v` afterwards, run `uv tool update-shell` and open a new terminal.
+`uv` downloads the Python version peek needs, so nothing else is required. If your shell can't find `v` afterwards, run `uv tool update-shell` and open a new terminal.
 
 To get the latest version:
 
