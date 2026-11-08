@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from peek.commands import COMMANDS
+
 COLUMNS, ROWS = 120, 30
 CELL_WIDTH, CELL_HEIGHT = 10, 20
 TIMEOUT_SECONDS = 10
@@ -23,7 +25,9 @@ POLL_SECONDS = 0.02
 FIRST_FILE_ROW = 1
 FILE_COLUMN = 8
 PALETTE_COLUMN = 40
-PALETTE_QUIT_ROW = 14
+PALETTE_QUIT_ROW = 5 + next(
+  index for index, command in enumerate(COMMANDS) if command.action == "quit"
+)
 
 MODE_QUERIES = {
   b"\x1b[?2026$p": b"\x1b[?2026;2$y",

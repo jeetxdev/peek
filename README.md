@@ -33,12 +33,18 @@ Press Cmd+P for the popup:
 | `>sav` | actions only |
 | `%needle` | text inside every file in the project |
 
+Choose **New File** (or press Cmd+N) to create and open a file using a path relative
+to the project. Missing parent folders are created. Existing files are never overwritten.
+Choose **Delete File** to permanently delete the open file after confirming. Cancel
+keeps the file and any unsaved edits.
+
 ## Shortcuts
 
 | Action | Shortcut |
 |---|---|
 | Popup | ⌘P or ⌃P |
 | Save | ⌘S |
+| New File | ⌘N or ⌃N |
 | Undo / Redo | ⌃Z / ⌃Y |
 | Cut | ⌘X |
 | Copy | ⌃C |

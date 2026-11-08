@@ -24,5 +24,7 @@ COMMANDS = (
   EditorCommand("Clean Text", "clean_text"),
   # No shortcut: Ghostty keeps Cmd+Shift+F, VS Code's key for this.
   EditorCommand("Search in Project", "search_in_project"),
+  EditorCommand("New File", "new_file", "ctrl+n,super+n", "⌘N"),
+  EditorCommand("Delete File", "delete_file"),
   EditorCommand("Quit", "quit", "ctrl+q", "⌃Q"),
 )

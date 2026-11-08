@@ -8,7 +8,7 @@ from textual.widgets.text_area import Selection
 
 from peek.app import READ_ONLY_NOTE, STATUS_ID, PeekApp
 from peek.commands import COMMANDS
-from peek.dialogs import ChoiceDialog
+from peek.dialogs import ChoiceDialog, NewFileDialog
 from peek.editor import CodeEditor
 from peek.explorer import FileExplorer
 from peek.file_search import list_project_files
@@ -718,5 +718,122 @@ async def test_tab_indented_file_keeps_tabs(project: Path) -> None:
     await pilot.press("tab")
     await pilot.pause()
     assert editor(pilot).text.startswith("\tall:")
+
+
+async def test_palette_creates_nested_file_and_refreshes_search(project: Path) -> None:
+  app = PeekApp(project, project / "a.ts")
+  async with app.run_test(size=TERMINAL_SIZE) as pilot:
+    await pilot.pause()
+    await open_palette(pilot)
+    await pilot.press(">", *"new", "enter")
+    await pilot.pause()
+    assert isinstance(app.screen, NewFileDialog)
+    app.screen.query_one(Input).value = "src/new.py"
+    await pilot.press("enter")
+    await settle(pilot)
+    assert (project / "src/new.py").read_text() == ""
+    assert editor(pilot).has_focus
+    assert editor(pilot).language == "python"
+    assert status_text(pilot) == "new.py"
+    tree = app.query_one(FileExplorer)
+    assert "src" in [str(node.label) for node in tree.root.children]
+    await pilot.press(*"hello", "super+s")
+    await settle(pilot)
+    assert (project / "src/new.py").read_text() == "hello"
+    screen = await open_palette(pilot)
+    await pilot.press(*"new.py")
+    await pilot.pause()
+    assert palette_rows(screen)[0].startswith("new.py")
+
+
+@pytest.mark.parametrize("name", ["a.ts", "../outside.txt", "/outside.txt", "linked/new.txt"])
+async def test_new_file_rejects_existing_or_outside_paths(project: Path, name: str) -> None:
+  (project / "linked").symlink_to(project.parent, target_is_directory=True)
+  app = PeekApp(project, project / "a.ts")
+  async with app.run_test(size=TERMINAL_SIZE) as pilot:
+    await pilot.pause()
+    await pilot.press("super+n")
+    await pilot.pause()
+    app.screen.query_one(Input).value = name
+    await pilot.press("enter")
+    await settle(pilot)
+    assert (project / "a.ts").read_text() == ORIGINAL
+    assert editor(pilot).text == ORIGINAL
+    assert not (project.parent / "outside.txt").exists()
+    assert not (project.parent / "new.txt").exists()
+
+
+async def test_new_file_cancel_preserves_unsaved_edits(project: Path) -> None:
+  app = PeekApp(project, project / "a.ts")
+  async with app.run_test(size=TERMINAL_SIZE) as pilot:
+    await pilot.pause()
+    await pilot.press("x", "super+n")
+    await pilot.pause()
+    # Quit must not open a second dialog over the filename prompt.
+    dialog = app.screen
+    await pilot.press("ctrl+q")
+    await pilot.pause()
+    assert app.screen is dialog
+    await pilot.press("escape")
+    await settle(pilot)
+    assert editor(pilot).text == f"x{ORIGINAL}"
+    await pilot.press("ctrl+n")
+    await pilot.pause()
+    app.screen.query_one(Input).value = "cancelled.txt"
+    await pilot.press("enter")
+    await pilot.pause()
+    assert isinstance(app.screen, ChoiceDialog)
+    await click_button(pilot, "#cancel")
+    await settle(pilot)
+    assert not (project / "cancelled.txt").exists()
+    assert editor(pilot).text == f"x{ORIGINAL}"
+
+
+@pytest.mark.parametrize("button", ["cancel", "delete"])
+async def test_palette_delete_confirms_and_updates_editor(project: Path, button: str) -> None:
+  app = PeekApp(project, project / "a.ts")
+  async with app.run_test(size=TERMINAL_SIZE) as pilot:
+    await pilot.pause()
+    await pilot.press("x")
+    await open_palette(pilot)
+    await pilot.press(">", *"delete", "enter")
+    await pilot.pause()
+    assert isinstance(app.screen, ChoiceDialog)
+    assert "Unsaved changes" in app.screen._prompt
+    await click_button(pilot, f"#{button}")
+    await settle(pilot)
+    if button == "cancel":
+      assert (project / "a.ts").read_text() == ORIGINAL
+      assert editor(pilot).text == f"x{ORIGINAL}"
+    else:
+      assert not (project / "a.ts").exists()
+      assert editor(pilot).text == ""
+      assert editor(pilot).read_only
+      assert status_text(pilot) == ""
+      tree = app.query_one(FileExplorer)
+      assert "a.ts" not in [str(node.label) for node in tree.root.children]
+      await pilot.press("super+s")
+      await settle(pilot)
+      assert not (project / "a.ts").exists()
+      screen = await open_palette(pilot)
+      await pilot.press(*"a.ts")
+      await pilot.pause()
+      assert palette_rows(screen) == [NO_MATCHES]
+
+
+async def test_delete_failure_keeps_editor(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  app = PeekApp(project, project / "a.ts")
+  async with app.run_test(size=TERMINAL_SIZE) as pilot:
+    await pilot.pause()
+    app.action_delete_file()
+    await pilot.pause()
+    def fail_unlink(self: Path, missing_ok: bool = False) -> None:
+      raise PermissionError("Permission denied")
+    with monkeypatch.context() as patch:
+      patch.setattr(Path, "unlink", fail_unlink)
+      await click_button(pilot, "#delete")
+      await settle(pilot)
+    assert editor(pilot).text == ORIGINAL
+    assert (project / "a.ts").exists()
 
 

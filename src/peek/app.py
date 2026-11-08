@@ -8,7 +8,7 @@ from textual.containers import Horizontal
 from textual.widgets import DirectoryTree, Static, TextArea
 
 from peek.commands import COMMANDS, PALETTE_KEYS
-from peek.dialogs import CANCEL, DISCARD, OVERWRITE, SAVE, ChoiceDialog
+from peek.dialogs import CANCEL, DELETE, DISCARD, OVERWRITE, SAVE, ChoiceDialog, NewFileDialog
 from peek.editor import CodeEditor
 from peek.explorer import FileExplorer
 from peek.file_io import FileOpenError, TextFile, changed_on_disk, read_text_file, write_text_file
@@ -116,13 +116,66 @@ class PeekApp(App[None]):
   async def action_save_file(self) -> None:
     await self._save()
 
+  @work
+  async def action_new_file(self) -> None:
+    name = await self.push_screen_wait(NewFileDialog())
+    if name is None:
+      return
+    path = self._root / name
+    try:
+      if Path(name).is_absolute() or not path.resolve().is_relative_to(self._root.resolve()):
+        self.notify("Enter a path inside this project", severity="warning")
+        return
+      if path.exists() or path.is_symlink():
+        self.notify(f"{name} already exists", severity="warning")
+        return
+      if not await self._confirm_leaving_file():
+        return
+      path.parent.mkdir(parents=True, exist_ok=True)
+      # Exclusive creation also protects files created while the dialog was open.
+      with path.open("x", encoding="utf-8"):
+        pass
+      file = read_text_file(path)
+    except (OSError, ValueError, FileOpenError) as error:
+      self.notify(f"Can't create {name}: {error}", severity="error")
+      return
+    self._open_file = file
+    self._editor.show_file(file)
+    self._refresh_status()
+    await self.query_one(FileExplorer).reload()
+
+  @work
+  async def action_delete_file(self) -> None:
+    file = self._open_file
+    if file is None:
+      self.notify("Open a file to delete first")
+      return
+    prompt = f"Permanently delete {file.path.name}?"
+    if self._has_unsaved_changes:
+      prompt += " Unsaved changes will also be lost."
+    choice = await self.push_screen_wait(ChoiceDialog(prompt, (CANCEL, DELETE)))
+    if choice != DELETE.id:
+      return
+    try:
+      file.path.unlink()
+    except OSError as error:
+      self.notify(f"Can't delete {file.path.name}: {error}", severity="error")
+      return
+    self._open_file = None
+    self._editor.read_only = True
+    self._editor.language = None
+    self._editor.load_text("")
+    self._refresh_status()
+    await self.query_one(FileExplorer).reload()
+    self.notify(f"Deleted {file.path.name}")
+
   async def action_quit(self) -> None:
     self._quit_when_safe()
 
   @work
   async def _quit_when_safe(self) -> None:
     # Ctrl+Q is a priority binding in Textual, so it also fires behind this dialog.
-    if isinstance(self.screen, ChoiceDialog):
+    if isinstance(self.screen, (ChoiceDialog, NewFileDialog)):
       return
     if await self._confirm_leaving_file():
       self.exit()
